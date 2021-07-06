@@ -1,12 +1,10 @@
 mod copy_helpers;
 mod compiler;
 
-#[macro_use]
-extern crate lazy_static;
-
 use std::fmt::Debug;
 use std::io;
 use std::io::prelude::*;
+use std::collections::VecDeque;
 
 use copy_helpers::*;
 
@@ -34,7 +32,7 @@ impl Instruction for Application {
 #[derive(Clone, Debug)]
 struct Abstraction {
     arity: usize,
-    body: Vec<Box<dyn Instruction>>,
+    body: VecDeque<Box<dyn Instruction>>,
 }
 
 impl Instruction for Abstraction {
@@ -43,7 +41,9 @@ impl Instruction for Abstraction {
             ced.push_env_code(self.body.clone());
         } else {
             let abs = Abstraction{arity: self.arity-1, body: self.body.clone()};
-            ced.push_env_code(vec!(Box::new(abs)));
+            let mut v = VecDeque::new();
+            v.push_back(Box::new(abs) as Box<dyn Instruction>);
+            ced.push_env_code(v);
         }
     }
 }
@@ -59,7 +59,7 @@ pub trait Value : ValueClone + Sync + Debug {
 
 #[derive(Clone, Debug)]
 struct CE {
-    code: Vec<Box<dyn Instruction>>,
+    code: VecDeque<Box<dyn Instruction>>,
     env: Vec<Box<dyn Value>>,
 }
 
@@ -70,27 +70,19 @@ impl Value for CE {
     }
 }
 
+fn get_ce_true() -> CE {
+    let mut inner_app = VecDeque::new();
+    inner_app.push_back(Box::new(Application {fun: 2, arg: 3}) as Box<dyn Instruction>);
 
-lazy_static! {
-    static ref CE_TRUE : CE = CE{
-        code: vec!(Box::new(
-            Abstraction{
-                arity: 1, 
-                body: vec!(Box::new(
-                    Application {fun: 2, arg: 3}
-                ))
-            })), 
-        env: Vec::new()
-    };
+    let mut v = VecDeque::new();
+    v.push_back(Box::new(Abstraction {arity: 1, body:  inner_app}) as Box<dyn Instruction>);
+    CE { code: v, env: Vec::new() }
+}
 
-    static ref CE_FALSE : CE = CE{
-        code: vec!(Box::new(
-            Abstraction{
-                arity: 1,
-                body: Vec::new()
-            })), 
-        env: Vec::new()
-    };
+fn get_ce_false() -> CE {
+    let mut v = VecDeque::new();
+    v.push_back(Box::new(Abstraction {arity: 1, body: VecDeque::new()}) as Box<dyn Instruction>);
+    CE {code : v, env: Vec::new() }
 }
 
 
@@ -116,9 +108,9 @@ impl Value for CharFn {
 
     fn apply(&self, ced: &mut CED, val: &Box<dyn Value>) {
         if self.equals(val) {
-            ced.push_env(Box::new(CE_TRUE.clone()));
+            ced.push_env(Box::new(get_ce_true()));
         } else {
-            ced.push_env(Box::new(CE_FALSE.clone()));
+            ced.push_env(Box::new(get_ce_false()));
         }
     }
 }
@@ -173,7 +165,7 @@ impl Value for SuccFn {
 
 #[derive(Debug)]
 pub struct CED {
-    code: Vec<Box<dyn Instruction>>,
+    code: VecDeque<Box<dyn Instruction>>,
     env: Vec<Box<dyn Value>>,
     dumps: Vec<CE>,
 }
@@ -187,13 +179,13 @@ impl CED {
         &self.env[self.env.len() - idx]
     }
 
-    fn push_env_code(&mut self, c: Vec<Box<dyn Instruction>>) {
+    fn push_env_code(&mut self, c: VecDeque<Box<dyn Instruction>>) {
         let ce = CE{code: c, env: self.env.clone()};
         self.push_env(Box::new(ce));
     }
 
     fn pop_code(&mut self) -> Option<Box<dyn Instruction>> {
-        self.code.pop()
+        self.code.pop_front()
     }
 
     fn save_dump(&mut self, new_ce : CE) {
@@ -229,7 +221,6 @@ fn main() {
 
     println!("Program = {}", program);
     let mut ced = compiler::compile(program.as_str());
-    println!("{:?}", ced);
     loop {
         if let Some(insn) = ced.pop_code() {
             insn.eval(&mut ced); 

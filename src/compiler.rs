@@ -48,9 +48,9 @@ fn split(tokens: Vec<Token>) -> Vec<Vec<Token>> {
     split
 }
 
-fn parse_abstraction(ts: &[Token]) -> Vec<Box<dyn Instruction>> {
+fn parse_abstraction(ts: &[Token]) -> VecDeque<Box<dyn Instruction>> {
     let mut arg_num = 0;
-    let mut body = Vec::new();
+    let mut body = VecDeque::new();
     for i in 0..ts.len() {
         match ts[i] {
             Token::LowerW => arg_num += 1,
@@ -61,11 +61,13 @@ fn parse_abstraction(ts: &[Token]) -> Vec<Box<dyn Instruction>> {
             _ => panic!("")
         }
     }
-    vec!(Box::new(Abstraction { arity: arg_num, body: body }))
+    let mut v = VecDeque::new();
+    v.push_back(Box::new(Abstraction { arity: arg_num, body: body }) as Box<dyn Instruction>);
+    v
 }
 
-fn parse_application(ts: &[Token]) -> Vec<Box<dyn Instruction>> {
-    let mut apps : Vec<Box<dyn Instruction>> = Vec::new();
+fn parse_application(ts: &[Token]) -> VecDeque<Box<dyn Instruction>> {
+    let mut apps : VecDeque<Box<dyn Instruction>> = VecDeque::new();
 
     let mut fun = 0;
     let mut arg = 0;
@@ -77,7 +79,7 @@ fn parse_application(ts: &[Token]) -> Vec<Box<dyn Instruction>> {
                 if arg == 0 {
                     fun += 1;
                 } else {
-                    apps.push(Box::new(Application{fun: fun, arg: arg}));
+                    apps.push_back(Box::new(Application{fun: fun, arg: arg}));
                     fun = 1;
                     arg = 0;
                 }
@@ -87,7 +89,7 @@ fn parse_application(ts: &[Token]) -> Vec<Box<dyn Instruction>> {
     }
 
     if fun > 0 && arg > 0 {
-        apps.push(Box::new(Application{fun: fun, arg: arg}));
+        apps.push_back(Box::new(Application{fun: fun, arg: arg}));
     }
     apps 
 }
@@ -97,7 +99,7 @@ pub fn compile(s: &str) -> CED {
     let tokens = tokenize(s);
     let splits = split(tokens);
 
-    let mut code = Vec::new();
+    let mut code = VecDeque::new();
 
     for s in splits.into_iter() {
         code.append( &mut 
@@ -115,7 +117,8 @@ pub fn compile(s: &str) -> CED {
         Box::new(OutFn{}),
     );
 
-    let dump_code = vec!(Box::new(Application {arg: 1, fun: 1}) as Box<dyn Instruction>);
+    let mut dump_code = VecDeque::new();
+    dump_code.push_back(Box::new(Application {arg: 1, fun: 1}) as Box<dyn Instruction>);
     let dump_env = Vec::new(); 
     let dump_ce = CE { code: dump_code, env: dump_env };
 
