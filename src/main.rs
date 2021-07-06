@@ -218,7 +218,18 @@ impl CED {
 }
 
 fn main() {
-    let mut ced = compiler::compile(PROGRAM);
+    let args: Vec<String> = std::env::args().collect();
+    let program = if args.len() == 1 {
+        println!("No file given; Running example code");
+        PROGRAM.to_owned()
+    } else {
+        println!("Reading {}", args[1]);
+        std::fs::read_to_string(&args[1]).expect("Couldn't open file!")
+    };
+
+    println!("Program = {}", program);
+    let mut ced = compiler::compile(program.as_str());
+    println!("{:?}", ced);
     loop {
         if let Some(insn) = ced.pop_code() {
             insn.eval(&mut ced); 
