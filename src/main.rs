@@ -1,3 +1,6 @@
+mod copy_helpers;
+mod compiler;
+
 #[macro_use]
 extern crate lazy_static;
 
@@ -5,10 +8,11 @@ use std::fmt::Debug;
 use std::io;
 use std::io::prelude::*;
 
+use copy_helpers::*;
 
 const PROGRAM: &'static str = "wWWwwww";
 
-trait Instruction : InstructionClone + Sync + Debug {
+pub trait Instruction : InstructionClone + Sync + Debug {
     fn eval(&self, ced: &mut CED);
 }
 
@@ -44,7 +48,7 @@ impl Instruction for Abstraction {
     }
 }
 
-trait Value : ValueClone + Sync + Debug {
+pub trait Value : ValueClone + Sync + Debug {
     fn get_char(&self) -> Option<u8> {
         None
     }
@@ -168,7 +172,7 @@ impl Value for SuccFn {
 
 
 #[derive(Debug)]
-struct CED {
+pub struct CED {
     code: Vec<Box<dyn Instruction>>,
     env: Vec<Box<dyn Value>>,
     dumps: Vec<CE>,
@@ -213,130 +217,8 @@ impl CED {
     }
 }
 
-#[derive(PartialEq, Debug)]
-enum Token {
-    UpperW,
-    LowerW,
-    LowerV
-}
-
-fn tokenize(s: &str) -> Vec<Token> {
-    let mut tokens = Vec::new();
-    let mut found_w = false;
-    for c in s.chars() {
-        let t = match c {
-                'w' => Token::LowerW,
-                'W' => Token::UpperW,
-                'v' => Token::LowerV,
-                 _  => continue
-        };
-
-        found_w |= t == Token::LowerW;
-
-        if found_w {
-            tokens.push(t);
-        }
-    }
-    tokens
-}
-
-
-fn split(tokens: Vec<Token>) -> Vec<Vec<Token>> {
-    let mut split = Vec::new();
-    let mut current = Vec::new();
-
-    for t in tokens.into_iter() {
-        match t {
-            Token::LowerV => {
-                if current.len() > 0  {
-                    split.push(current); 
-                }
-                current = Vec::new() },
-            c => current.push(c)
-        }
-    }
-    if current.len() > 0 {
-        split.push(current);
-    }
-    split
-}
-
-fn parse_abstraction(ts: &[Token]) -> Vec<Box<dyn Instruction>> {
-    let mut arg_num = 0;
-    let mut body = Vec::new();
-    for i in 0..ts.len() {
-        match ts[i] {
-            Token::LowerW => arg_num += 1,
-            Token::UpperW => {
-                body = parse_application(&ts[i..]);
-                break;
-            },
-            _ => panic!("")
-        }
-    }
-    vec!(Box::new(Abstraction { arity: arg_num, body: body }))
-}
-
-fn parse_application(ts: &[Token]) -> Vec<Box<dyn Instruction>> {
-    let mut apps : Vec<Box<dyn Instruction>> = Vec::new();
-
-    let mut fun = 0;
-    let mut arg = 0;
-
-    for t in ts {
-        match t {
-            Token::LowerW => arg += 1, 
-            Token::UpperW => {
-                if arg == 0 {
-                    fun += 1;
-                } else {
-                    apps.push(Box::new(Application{fun: fun, arg: arg}));
-                    fun = 1;
-                    arg = 0;
-                }
-            }
-            _ => panic!("")
-        }
-    }
-
-    if fun > 0 && arg > 0 {
-        apps.push(Box::new(Application{fun: fun, arg: arg}));
-    }
-    apps 
-}
-
-
-fn parse(s: &str) -> CED {
-    let tokens = tokenize(s);
-    let splits = split(tokens);
-
-    let mut code = Vec::new();
-
-    for s in splits.into_iter() {
-        code.append( &mut 
-            match s[0] {
-                Token::LowerW => parse_abstraction(&s),
-                Token::UpperW => parse_application(&s),
-                _ => panic!("v remaining in splits??")
-        });
-    }
-
-    let env : Vec<Box<dyn Value>> = vec!(
-        Box::new(InFn{}),
-        Box::new(CharFn{char: 'w' as u8}),
-        Box::new(SuccFn{}),
-        Box::new(OutFn{}),
-    );
-
-    let dump_code = vec!(Box::new(Application {arg: 1, fun: 1}) as Box<dyn Instruction>);
-    let dump_env = Vec::new(); 
-    let dump_ce = CE { code: dump_code, env: dump_env };
-
-    CED { code: code, env: env, dumps: vec!(dump_ce) }
-}
-
 fn main() {
-    let mut ced = parse(PROGRAM);
+    let mut ced = compiler::compile(PROGRAM);
     loop {
         if let Some(insn) = ced.pop_code() {
             insn.eval(&mut ced); 
@@ -345,47 +227,6 @@ fn main() {
                 break;
             }
         }
-    }
-}
-
-
-
-// I want to hide this crap
-trait ValueClone {
-    fn clone_box(&self) -> Box<dyn Value>;
-}
-
-impl<T> ValueClone for T 
-where
-    T: 'static + Value + Clone
-{
-    fn clone_box(&self) -> Box<dyn Value> {
-        Box::new(self.clone())
-    }
-}
-
-impl Clone for Box<dyn Value> {
-    fn clone(&self) -> Self {
-        self.clone_box()
-    }
-}
-
-trait InstructionClone {
-    fn clone_box(&self) -> Box<dyn Instruction>;
-}
-
-impl<T> InstructionClone for T
-where
-    T: 'static + Instruction + Clone
-{
-    fn clone_box(&self) -> Box<dyn Instruction> {
-        Box::new(self.clone())
-    }
-}
-
-impl Clone for Box<dyn Instruction> {
-    fn clone(&self) -> Self {
-        self.clone_box()
     }
 }
 
